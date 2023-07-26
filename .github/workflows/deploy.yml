@@ -25,4 +25,4 @@ jobs:
             git pull origin master
             git status
             go build
-            systemctl restart arcane_stats_api
+            sudo systemctl restart arcane_stats_api
