@@ -3,9 +3,11 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -125,7 +127,7 @@ func HandleDeleteStats(wr http.ResponseWriter, req *http.Request) {
 }
 
 func ConnectDb() *sql.DB {
-	db, err := sql.Open("mysql", "u26609_dWb5joQCUq:w2r11gGx4nEHOPbj1aoBsyML@tcp(mahimahi.bloom.host:3306)/s26609_stats")
+	db, err := sql.Open("mysql", os.Getenv("DATABASE_USER")+":"+os.Getenv("DATABASE_PASSWORD")+"@tcp("+os.Getenv("DATABASE_HOST")+")/"+os.Getenv("DATABASE_NAME"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -136,7 +138,6 @@ func ConnectDb() *sql.DB {
 	}
 
 	return db
-	//fmt.Println("Successfully connected to database!")
 }
 
 func main() {
@@ -146,8 +147,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stats", HandleStats)
 
-	fmt.Println("Starting HTTP server on port 8080")
-	err := http.ListenAndServe(":8080", mux)
+	// Flags
+	address := flag.String("listen", ":3000", "The address the server will listen on.")
+	flag.Parse()
+
+	fmt.Println("Starting HTTP server on " + *address)
+	err := http.ListenAndServe(*address, mux)
 	if err != nil {
 		fmt.Println("Failed to start HTTP server ", err)
 	}
