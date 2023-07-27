@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -9,10 +10,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/redis/go-redis/v9"
 )
 
+var rdb *redis.Client
 var db *sql.DB
 
 type MojangUser struct {
@@ -40,7 +44,7 @@ func HandleStats(wr http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func GetMojangUser(username string) *MojangUser {
+func GetMojangUserFromApi(username string) *MojangUser {
 	req, err := http.NewRequest("GET", "https://api.mojang.com/users/profiles/minecraft/"+username, nil)
 	if err != nil {
 		log.Fatal("Failed to get uuid from Mojang API: ", err)
@@ -61,6 +65,43 @@ func GetMojangUser(username string) *MojangUser {
 	json.NewDecoder(res.Body).Decode(&mojangUser)
 
 	return &mojangUser
+}
+
+func GetMojangUserFromCache(username string) *MojangUser {
+	user, err := rdb.Get(context.Background(), "players:"+username).Result()
+
+	if err != nil {
+		panic(err)
+	}
+
+	mojangUser := &MojangUser{}
+	err = json.Unmarshal([]byte(user), mojangUser)
+
+	return mojangUser
+}
+
+func GetAndChacheMojangUser(username string) *MojangUser {
+	mojangUser := GetMojangUserFromApi(username)
+
+	b, err := json.Marshal(mojangUser)
+
+	if err != nil {
+		panic(err)
+	}
+
+	rdb.Set(context.Background(), "players:"+username, string(b), 15*time.Minute)
+
+	return mojangUser
+}
+
+func GetMojangUser(username string) *MojangUser {
+	mojangUser := GetMojangUserFromCache(username)
+
+	if mojangUser == nil {
+		mojangUser = GetAndChacheMojangUser(username)
+	}
+
+	return mojangUser
 }
 
 func FullUuidFromTrimmed(trimmedId string) string {
@@ -143,6 +184,12 @@ func ConnectDb() *sql.DB {
 func main() {
 	db = ConnectDb()
 	defer db.Close()
+
+	rdb = redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+		DB:   0,
+	})
+	defer rdb.Close()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stats", HandleStats)
